@@ -28,9 +28,34 @@ export const PERIOD_OPTIONS: { value: Period; label: string }[] = [
   { value: 'year', label: 'Год' },
 ]
 
-export const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
-  { value: 'low', label: 'Низкий' },
-  { value: 'medium', label: 'Средний' },
-  { value: 'high', label: 'Высокий' },
+export const PRIORITY_STYLES: Record<
+  Priority,
+  {
+    badge: string
+    dot: string
+    label: string
+  }
+> = {
+  high: {
+    badge: 'bg-priority-high-bg text-priority-high-ink border-priority-high-border/80',
+    dot: 'bg-priority-high-dot',
+    label: 'Высокий приоритет',
+  },
+  medium: {
+    badge: 'bg-priority-med-bg text-priority-med-ink border-priority-med-border/80',
+    dot: 'bg-priority-med-dot',
+    label: 'Средний приоритет',
+  },
+  low: {
+    badge: 'bg-priority-low-bg text-priority-low-ink border-priority-low-border/80',
+    dot: 'bg-priority-low-dot',
+    label: 'Низкий приоритет',
+  },
+}
+
+export const PRIORITY_OPTIONS: { value: Priority; label: string; dotClass: string }[] = [
+  { value: 'low', label: 'Низкий', dotClass: 'bg-priority-low-dot' },
+  { value: 'medium', label: 'Средний', dotClass: 'bg-priority-med-dot' },
+  { value: 'high', label: 'Высокий', dotClass: 'bg-priority-high-dot' },
 ]
 

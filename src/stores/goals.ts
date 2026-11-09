@@ -1,7 +1,9 @@
 import { create } from 'zustand'
-import { LOCAL_USER_ID, repos } from '../storage'
-import type { Goal, ID, ISODate, Period, Priority, SubGoal } from '../types/models'
+import { repos } from '../storage'
+import { getActiveUserId } from './auth'
+import type { Goal, GoalType, ID, ISODate, Period, Priority, SubGoal } from '../types/models'
 import { newId, nowISO } from '../lib/utils'
+import { useCelebration } from './celebration'
 
 export interface GoalInput {
   title: string
@@ -12,6 +14,8 @@ export interface GoalInput {
   priority: Priority
   deadline?: ISODate
   subgoals: SubGoal[]
+  goalType?: GoalType
+  dailyHistory?: Record<ISODate, boolean>
 }
 
 interface GoalsState {
@@ -19,8 +23,17 @@ interface GoalsState {
   load: () => Promise<void>
   create: (input: GoalInput) => Goal
   update: (id: ID, patch: Partial<GoalInput>) => void
+  /** Переместить цель в корзину (мягкое удаление) */
   remove: (id: ID) => void
+  /** Восстановить цель из корзины */
+  restore: (id: ID) => void
+  /** Удалить цель навсегда */
+  hardRemove: (id: ID) => void
+  /** Очистить всю корзину */
+  clearTrash: () => void
   toggle: (id: ID) => void
+  /** Отметить день для ежедневной цели */
+  toggleDailyDay: (goalId: ID, date: ISODate) => void
   addSubgoal: (goalId: ID, title: string) => void
   toggleSubgoal: (goalId: ID, subgoalId: ID) => void
   removeSubgoal: (goalId: ID, subgoalId: ID) => void
@@ -62,7 +75,7 @@ export const useGoals = create<GoalsState>((set, get) => {
         title: input.title.trim(),
         description: input.description?.trim() || undefined,
         id: newId(),
-        userId: LOCAL_USER_ID,
+        userId: getActiveUserId(),
         createdAt: now,
         updatedAt: now,
       })
@@ -81,13 +94,55 @@ export const useGoals = create<GoalsState>((set, get) => {
     },
 
     remove(id) {
+      mutate(id, (g) => ({ ...g, deletedAt: nowISO() }))
+    },
+
+    restore(id) {
+      mutate(id, (g) => ({ ...g, deletedAt: undefined }))
+    },
+
+    hardRemove(id) {
       set({ goals: get().goals.filter((g) => g.id !== id) })
       void repos.goals.remove(id)
     },
 
+    clearTrash() {
+      const trashed = get().goals.filter((g) => Boolean(g.deletedAt))
+      set({ goals: get().goals.filter((g) => !g.deletedAt) })
+      for (const g of trashed) {
+        void repos.goals.remove(g.id)
+      }
+    },
+
     /** Ручная отметка. Подцели не трогаем, чтобы снятие отметки вернуло прежний прогресс */
     toggle(id) {
-      mutate(id, (g) => ({ ...g, completedAt: g.completedAt ? undefined : nowISO() }))
+      let justCompleted = false
+      mutate(id, (g) => {
+        if (!g.completedAt) justCompleted = true
+        return { ...g, completedAt: g.completedAt ? undefined : nowISO() }
+      })
+      if (justCompleted) useCelebration.getState().celebrate()
+    },
+
+    toggleDailyDay(goalId, date) {
+      let isChecked = false
+      mutate(goalId, (g) => {
+        const history = { ...(g.dailyHistory || {}) }
+        const nextVal = !history[date]
+        if (nextVal) {
+          history[date] = true
+          isChecked = true
+        } else {
+          delete history[date]
+        }
+        return {
+          ...g,
+          dailyHistory: history,
+        }
+      })
+      if (isChecked) {
+        useCelebration.getState().celebrate()
+      }
     },
 
     addSubgoal(goalId, title) {
@@ -99,12 +154,17 @@ export const useGoals = create<GoalsState>((set, get) => {
     },
 
     toggleSubgoal(goalId, subgoalId) {
-      mutate(goalId, (g) =>
-        syncCompletion({
+      let justCompleted = false
+      mutate(goalId, (g) => {
+        const wasDone = Boolean(g.completedAt)
+        const next = syncCompletion({
           ...g,
           subgoals: g.subgoals.map((s) => (s.id === subgoalId ? { ...s, done: !s.done } : s)),
-        }),
-      )
+        })
+        if (!wasDone && Boolean(next.completedAt)) justCompleted = true
+        return next
+      })
+      if (justCompleted) useCelebration.getState().celebrate()
     },
 
     removeSubgoal(goalId, subgoalId) {
@@ -114,4 +174,3 @@ export const useGoals = create<GoalsState>((set, get) => {
     },
   }
 })
-

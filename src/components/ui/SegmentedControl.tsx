@@ -3,6 +3,7 @@ import { cn } from '../../lib/utils'
 interface Option<T extends string> {
   value: T
   label: string
+  dotClass?: string
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -35,14 +36,17 @@ export function SegmentedControl<T extends string>({
             aria-checked={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              'h-8 rounded-full border px-3.5 text-body transition-colors duration-150',
-              stretch && 'flex-1 px-2',
+              'inline-flex items-center justify-center gap-1.5 h-8 rounded-full border transition-colors duration-150',
+              stretch ? 'min-w-0 flex-1 truncate px-2 text-small' : 'px-3.5 text-body',
               active
                 ? 'border-line bg-surface font-medium text-ink'
                 : 'border-transparent text-muted hover:text-ink',
             )}
           >
-            {option.label}
+            {option.dotClass && (
+              <span className={cn('size-2 shrink-0 rounded-[2px]', option.dotClass)} />
+            )}
+            <span className="truncate">{option.label}</span>
           </button>
         )
       })}

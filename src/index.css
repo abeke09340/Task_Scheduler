@@ -34,9 +34,25 @@
   --color-sand: #ECE5D5;
   --color-sand-ink: #6E6247;
 
-  /* Индикатор высокого приоритета */
+  /* Индикатор высокого приоритета (legacy) */
   --color-priority-bg: #FDE8E8;
   --color-priority-ink: #D92D20;
+
+  /* Индикаторы приоритета: высокий (красный), средний (жёлтый), низкий (зелёный) */
+  --color-priority-high-bg: #FDE8E8;
+  --color-priority-high-ink: #991B1B;
+  --color-priority-high-border: #FCA5A5;
+  --color-priority-high-dot: #EF4444;
+
+  --color-priority-med-bg: #FEF3C7;
+  --color-priority-med-ink: #92400E;
+  --color-priority-med-border: #FCD34D;
+  --color-priority-med-dot: #F59E0B;
+
+  --color-priority-low-bg: #DCFCE7;
+  --color-priority-low-ink: #166534;
+  --color-priority-low-border: #86EFAC;
+  --color-priority-low-dot: #22C55E;
 
   /* Типографика: максимум 3 размера */
   --text-title: 32px;

@@ -70,3 +70,90 @@ export function greeting(date: Date = new Date()): string {
   return 'Доброй ночи'
 }
 
+export interface DayInfo {
+  date: ISODate
+  dayName: string
+  dayNumber: string
+  isToday: boolean
+}
+
+/** Возвращает 7 дней текущей недели (Пн-Вс) */
+export function getWeekDays(baseDate: Date = new Date()): DayInfo[] {
+  const start = startOfWeek(baseDate, WEEK)
+  const todayStr = toISODate(new Date())
+  const days: DayInfo[] = []
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    const dateStr = toISODate(d)
+    days.push({
+      date: dateStr,
+      dayName: capitalize(format(d, 'EEEEEE', { locale: ru })), // Пн, Вт, Ср...
+      dayNumber: format(d, 'd'),
+      isToday: dateStr === todayStr,
+    })
+  }
+
+  return days
+}
+
+/** Возвращает дни текущего месяца */
+export function getMonthDays(baseDate: Date = new Date()): DayInfo[] {
+  const start = startOfMonth(baseDate)
+  const todayStr = toISODate(new Date())
+  const year = start.getFullYear()
+  const month = start.getMonth()
+  const daysCount = new Date(year, month + 1, 0).getDate()
+  const days: DayInfo[] = []
+
+  for (let i = 1; i <= daysCount; i++) {
+    const d = new Date(year, month, i)
+    const dateStr = toISODate(d)
+    days.push({
+      date: dateStr,
+      dayName: capitalize(format(d, 'EEEEEE', { locale: ru })),
+      dayNumber: String(i),
+      isToday: dateStr === todayStr,
+    })
+  }
+
+  return days
+}
+
+export interface UpcomingDayTab {
+  date: ISODate
+  dayName: string
+  dayNumber: string
+  fullLabel: string
+  tabTitle: string
+  isToday: boolean
+  isTomorrow: boolean
+}
+
+/** Возвращает 7 дней вперёд начиная с сегодня: Сегодня, Завтра, 12, 13, 14, 15... */
+export function getUpcomingWeekDays(baseDate: Date = new Date()): UpcomingDayTab[] {
+  const days: UpcomingDayTab[] = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(baseDate)
+    d.setDate(baseDate.getDate() + i)
+    const dateStr = toISODate(d)
+    const dayName = capitalize(format(d, 'EEEEEE', { locale: ru }))
+    const dayNumber = format(d, 'd')
+    const fullLabel = capitalize(format(d, 'EEEE, d MMMM', { locale: ru }))
+    const tabTitle = i === 0 ? 'Сегодня' : i === 1 ? 'Завтра' : dayNumber
+
+    days.push({
+      date: dateStr,
+      dayName,
+      dayNumber,
+      fullLabel,
+      tabTitle,
+      isToday: i === 0,
+      isTomorrow: i === 1,
+    })
+  }
+  return days
+}
+
+

@@ -11,15 +11,23 @@ import { periodStartKey } from '../../lib/dates'
 import { cn, newId } from '../../lib/utils'
 import { useCategories } from '../../stores/categories'
 import { useGoals } from '../../stores/goals'
-import type { ColorKey, Goal, Period, Priority, SubGoal } from '../../types/models'
+import type { ColorKey, Goal, GoalType, Period, Priority, SubGoal } from '../../types/models'
 
 interface GoalFormProps {
   goal?: Goal
   defaultPeriod: Period
+  initialGoalType?: GoalType
+  initialCategoryId?: string
   onClose: () => void
 }
 
-export function GoalForm({ goal, defaultPeriod, onClose }: GoalFormProps) {
+export function GoalForm({
+  goal,
+  defaultPeriod,
+  initialGoalType = 'general',
+  initialCategoryId,
+  onClose,
+}: GoalFormProps) {
   const categories = useCategories((s) => s.categories)
   const addCategory = useCategories((s) => s.add)
   const createGoal = useGoals((s) => s.create)
@@ -28,7 +36,8 @@ export function GoalForm({ goal, defaultPeriod, onClose }: GoalFormProps) {
 
   const [title, setTitle] = useState(goal?.title ?? '')
   const [description, setDescription] = useState(goal?.description ?? '')
-  const [categoryId, setCategoryId] = useState(goal?.categoryId ?? categories[0]?.id ?? '')
+  const [categoryId, setCategoryId] = useState(goal?.categoryId ?? initialCategoryId ?? categories[0]?.id ?? '')
+  const [goalType, setGoalType] = useState<GoalType>(goal?.goalType ?? initialGoalType)
   const [period, setPeriod] = useState<Period>(goal?.period ?? defaultPeriod)
   const [priority, setPriority] = useState<Priority>(goal?.priority ?? 'medium')
   const [deadline, setDeadline] = useState(goal?.deadline ?? '')
@@ -70,8 +79,9 @@ export function GoalForm({ goal, defaultPeriod, onClose }: GoalFormProps) {
       categoryId,
       period,
       priority,
+      goalType,
       deadline: deadline || undefined,
-      subgoals: steps,
+      subgoals: goalType === 'daily' ? [] : steps,
     }
     if (goal) {
       updateGoal(goal.id, {
@@ -227,6 +237,20 @@ export function GoalForm({ goal, defaultPeriod, onClose }: GoalFormProps) {
           )}
         </FieldGroup>
 
+        <FieldGroup label="Тип цели">
+          <SegmentedControl
+            label="Тип цели"
+            options={[
+              { value: 'general', label: 'Общая цель' },
+              { value: 'daily', label: 'Ежедневная (рутина с 7 тиками)' },
+            ]}
+            value={goalType}
+            onChange={(v) => setGoalType(v as GoalType)}
+            stretch
+            className="rounded-full bg-bg p-1"
+          />
+        </FieldGroup>
+
         <FieldGroup label="Период">
           <SegmentedControl
             label="Период"
@@ -238,57 +262,64 @@ export function GoalForm({ goal, defaultPeriod, onClose }: GoalFormProps) {
           />
         </FieldGroup>
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <FieldGroup label="Приоритет">
-            <SegmentedControl
-              label="Приоритет"
-              options={PRIORITY_OPTIONS}
-              value={priority}
-              onChange={setPriority}
-              stretch
-              className="rounded-full bg-bg p-1"
-            />
-          </FieldGroup>
-          <Field label="Дедлайн">
-            <input
-              type="date"
-              className={inputClass}
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        <FieldGroup label="Шаги">
-          <div className="flex flex-col gap-1">
-            {subgoals.map((step) => (
-              <div key={step.id} className="flex h-9 items-center gap-2.5 rounded-lg border border-line px-3">
-                <span className={cn('size-1.5 shrink-0 rounded-full', step.done ? 'bg-accent' : 'bg-line-strong')} />
-                <span className="flex-1 truncate text-body">{step.title}</span>
-                <IconButton
-                  label={`Удалить шаг: ${step.title}`}
-                  onClick={() => setSubgoals((prev) => prev.filter((s) => s.id !== step.id))}
-                  className="-mr-2 size-7"
-                >
-                  <X size={14} strokeWidth={1.75} />
-                </IconButton>
-              </div>
-            ))}
-            <input
-              className={inputClass}
-              value={stepDraft}
-              onChange={(e) => setStepDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  addStep()
-                }
-              }}
-              placeholder="Новый шаг и Enter"
-              aria-label="Новый шаг"
-            />
-          </div>
+        <FieldGroup label="Приоритет">
+          <SegmentedControl
+            label="Приоритет"
+            options={PRIORITY_OPTIONS}
+            value={priority}
+            onChange={setPriority}
+            stretch
+            className="rounded-full bg-bg p-1"
+          />
         </FieldGroup>
+
+        {goalType === 'general' ? (
+          <>
+            <Field label="Дедлайн">
+              <input
+                type="date"
+                className={inputClass}
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+              />
+            </Field>
+
+            <FieldGroup label="Шаги">
+              <div className="flex flex-col gap-1">
+                {subgoals.map((step) => (
+                  <div key={step.id} className="flex h-9 items-center gap-2.5 rounded-lg border border-line px-3">
+                    <span className={cn('size-1.5 shrink-0 rounded-full', step.done ? 'bg-accent' : 'bg-line-strong')} />
+                    <span className="flex-1 truncate text-body">{step.title}</span>
+                    <IconButton
+                      label={`Удалить шаг: ${step.title}`}
+                      onClick={() => setSubgoals((prev) => prev.filter((s) => s.id !== step.id))}
+                      className="-mr-2 size-7"
+                    >
+                      <X size={14} strokeWidth={1.75} />
+                    </IconButton>
+                  </div>
+                ))}
+                <input
+                  className={inputClass}
+                  value={stepDraft}
+                  onChange={(e) => setStepDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addStep()
+                    }
+                  }}
+                  placeholder="Новый шаг и Enter"
+                  aria-label="Новый шаг"
+                />
+              </div>
+            </FieldGroup>
+          </>
+        ) : (
+          <div className="rounded-lg border border-line bg-bg/50 p-3.5 text-small text-muted">
+            💡 Ежедневная цель будет отображаться во вкладке <strong>«Ежедневные»</strong> со строкой квадратных тиков на каждый день недели.
+          </div>
+        )}
       </form>
     </Modal>
   )

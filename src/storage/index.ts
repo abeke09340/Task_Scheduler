@@ -1,17 +1,19 @@
-import type { Category, Goal } from '../types/models'
+import type { Category, Goal, ScheduleItem } from '../types/models'
 import { createLocalRepository, localKeyValue } from './local'
+import { getActiveUserId } from '../stores/auth'
 
 /**
  * Единственная точка, где выбирается реализация хранилища.
- * Для перехода на облако достаточно заменить реализации здесь.
+ * Записи изолируются по ID авторизованного пользователя.
  */
 export const repos = {
-  goals: createLocalRepository<Goal>('goals'),
-  categories: createLocalRepository<Category>('categories'),
+  goals: createLocalRepository<Goal>('goals', getActiveUserId),
+  categories: createLocalRepository<Category>('categories', getActiveUserId),
+  schedule: createLocalRepository<ScheduleItem>('schedule', getActiveUserId),
 }
 
 export const kv = localKeyValue
 
-/** Пока нет авторизации, все данные принадлежат локальному пользователю */
 export const LOCAL_USER_ID = 'local'
+
 

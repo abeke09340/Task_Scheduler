@@ -1,19 +1,29 @@
 import type { Category, Goal, Priority } from '../types/models'
 
-/** Прогресс цели 0–100: выполнена → 100, иначе доля выполненных подцелей */
-export function goalProgress(goal: Goal): number {
+/** Прогресс цели 0–100: для ежедневной цели — доля отмеченных дней, иначе — выполненные подцели */
+export function goalProgress(goal: Goal, periodDates?: string[]): number {
+  if (goal.goalType === 'daily' && periodDates && periodDates.length > 0) {
+    const history = goal.dailyHistory || {}
+    const done = periodDates.filter((d) => Boolean(history[d])).length
+    return Math.round((done / periodDates.length) * 100)
+  }
   if (goal.completedAt) return 100
   if (goal.subgoals.length === 0) return 0
   const done = goal.subgoals.filter((s) => s.done).length
   return Math.round((done / goal.subgoals.length) * 100)
 }
 
-export const isGoalDone = (goal: Goal) => Boolean(goal.completedAt)
+export const isGoalDone = (goal: Goal, periodDates?: string[]) => {
+  if (goal.goalType === 'daily' && periodDates && periodDates.length > 0) {
+    return goalProgress(goal, periodDates) === 100
+  }
+  return Boolean(goal.completedAt)
+}
 
 /** Средний прогресс набора целей */
-export function averageProgress(goals: Goal[]): number {
+export function averageProgress(goals: Goal[], periodDates?: string[]): number {
   if (goals.length === 0) return 0
-  const sum = goals.reduce((acc, g) => acc + goalProgress(g), 0)
+  const sum = goals.reduce((acc, g) => acc + goalProgress(g, periodDates), 0)
   return Math.round(sum / goals.length)
 }
 
@@ -42,7 +52,7 @@ export function sortGoals(goals: Goal[], categories: Category[] = []): Goal[] {
     if (aCat !== bCat) return aCat - bCat
     if (a.categoryId !== b.categoryId) return a.categoryId.localeCompare(b.categoryId)
 
-    const prDiff = PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority]
+    const prDiff = (PRIORITY_WEIGHT[a.priority] ?? 1) - (PRIORITY_WEIGHT[b.priority] ?? 1)
     if (prDiff !== 0) return prDiff
 
     if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline)

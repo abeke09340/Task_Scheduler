@@ -13,13 +13,23 @@ function read<T>(key: string): T | null {
 }
 
 function write<T>(key: string, value: T) {
-  localStorage.setItem(PREFIX + key, JSON.stringify(value))
+  try {
+    localStorage.setItem(PREFIX + key, JSON.stringify(value))
+  } catch (err) {
+    console.error(`Failed to write to localStorage (${PREFIX + key}):`, err)
+  }
 }
 
-export function createLocalRepository<T extends { id: ID }>(table: string): Repository<T> {
+export function createLocalRepository<T extends { id: ID; userId?: ID }>(
+  table: string,
+  getUserId?: () => ID,
+): Repository<T> {
   return {
     async list() {
-      return read<T[]>(table) ?? []
+      const all = read<T[]>(table) ?? []
+      if (!getUserId) return all
+      const currentId = getUserId()
+      return all.filter((x) => x.userId === currentId || (!x.userId && currentId === 'local'))
     },
     async upsert(item) {
       const all = read<T[]>(table) ?? []

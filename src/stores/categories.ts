@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { LOCAL_USER_ID, repos } from '../storage'
+import { repos } from '../storage'
+import { getActiveUserId } from './auth'
 import type { Category, ColorKey, ID } from '../types/models'
 import { newId, nowISO } from '../lib/utils'
 
@@ -25,7 +26,7 @@ export const useCategories = create<CategoriesState>((set, get) => ({
     const now = nowISO()
     const category: Category = {
       id: newId(),
-      userId: LOCAL_USER_ID,
+      userId: getActiveUserId(),
       name: name.trim(),
       color,
       isDefault: false,

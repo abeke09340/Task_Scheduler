@@ -1,6 +1,7 @@
 import type { Category, ColorKey } from '../types/models'
 import { nowISO } from '../lib/utils'
-import { kv, LOCAL_USER_ID, repos } from './index'
+import { kv, repos } from './index'
+import { getActiveUserId } from '../stores/auth'
 
 const SEED_FLAG = 'seeded'
 const DEMO_CLEANED_FLAG = 'demo_goals_cleaned_v1'
@@ -25,13 +26,16 @@ const LEGACY_DEMO_TITLES = new Set([
 ])
 
 /** Первый запуск: только стандартные категории, без демо-целей */
-export async function ensureSeed() {
-  if (!(await kv.get<boolean>(SEED_FLAG))) {
+export async function ensureSeed(targetUserId?: string) {
+  const userId = targetUserId || getActiveUserId()
+  const existing = await repos.categories.list()
+  if (existing.length === 0) {
     const now = nowISO()
     for (const [order, c] of DEFAULT_CATEGORIES.entries()) {
       const category: Category = {
         ...c,
-        userId: LOCAL_USER_ID,
+        id: `cat-${c.id}-${userId}`,
+        userId,
         isDefault: true,
         order,
         createdAt: now,
@@ -44,8 +48,8 @@ export async function ensureSeed() {
 
   // Одноразовая очистка ранее зашитых демо-целей у существующих пользователей
   if (!(await kv.get<boolean>(DEMO_CLEANED_FLAG))) {
-    const existing = await repos.goals.list()
-    for (const g of existing) {
+    const existingGoals = await repos.goals.list()
+    for (const g of existingGoals) {
       if (LEGACY_DEMO_TITLES.has(g.title)) {
         await repos.goals.remove(g.id)
       }

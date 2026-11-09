@@ -1,4 +1,4 @@
-import { CalendarClock, Flag, Pencil, Plus, X } from 'lucide-react'
+import { CalendarClock, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { Checkbox } from '../../components/ui/Checkbox'
 import { IconButton } from '../../components/ui/Button'
@@ -6,6 +6,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar'
 import { Tag } from '../../components/ui/Tag'
 import { deadlineInfo } from '../../lib/dates'
 import { goalProgress, isGoalDone } from '../../lib/progress'
+import { PRIORITY_STYLES } from '../../lib/constants'
 import { cn } from '../../lib/utils'
 import { useGoals } from '../../stores/goals'
 import type { Category, Goal } from '../../types/models'
@@ -18,6 +19,7 @@ interface GoalCardProps {
 
 export function GoalCard({ goal, category, onEdit }: GoalCardProps) {
   const toggle = useGoals((s) => s.toggle)
+  const remove = useGoals((s) => s.remove)
   const toggleSubgoal = useGoals((s) => s.toggleSubgoal)
   const addSubgoal = useGoals((s) => s.addSubgoal)
   const removeSubgoal = useGoals((s) => s.removeSubgoal)
@@ -29,11 +31,13 @@ export function GoalCard({ goal, category, onEdit }: GoalCardProps) {
   const progress = goalProgress(goal)
   const deadline = goal.deadline ? deadlineInfo(goal.deadline) : null
   const doneSteps = goal.subgoals.filter((s) => s.done).length
+  const priority = goal.priority || 'medium'
+  const pStyle = PRIORITY_STYLES[priority] || PRIORITY_STYLES.medium
 
   return (
     <article
       className={cn(
-        'rounded-xl border bg-surface transition-colors duration-150',
+        'group/card rounded-xl border bg-surface transition-colors duration-150',
         expanded ? 'border-line-strong/70' : 'border-line hover:border-line-strong/60',
       )}
     >
@@ -52,27 +56,36 @@ export function GoalCard({ goal, category, onEdit }: GoalCardProps) {
         }}
         className="cursor-pointer rounded-xl px-4 pt-3.5 pb-3 focus-visible:outline-offset-[-2px]"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <Checkbox
             checked={done}
             onChange={() => toggle(goal.id)}
             label={done ? `Снять отметку: ${goal.title}` : `Отметить выполненной: ${goal.title}`}
           />
-          <h3
-            className={cn(
-              'min-w-0 flex-1 truncate text-body transition-colors',
-              done ? 'text-muted line-through decoration-muted/60' : 'text-ink',
-            )}
-          >
-            {goal.title}
-          </h3>
-          {goal.priority === 'high' && !done && (
-            <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-priority-bg px-2.5 text-small font-medium text-priority-ink">
-              <Flag size={12} strokeWidth={2.25} />
-              Приоритет
+          <div className="min-w-0 flex-1">
+            <span
+              className={cn(
+                'inline-flex max-w-full items-center gap-1.5 truncate rounded-md border px-2 py-0.5 text-body font-medium transition-colors',
+                pStyle.badge,
+                done && 'opacity-60 line-through decoration-current/60',
+              )}
+              title={`${goal.title} (${pStyle.label})`}
+            >
+              <span className={cn('size-2 shrink-0 rounded-[2px]', pStyle.dot)} />
+              <span className="truncate">{goal.title}</span>
             </span>
-          )}
+          </div>
           {category && <Tag color={category.color}>{category.name}</Tag>}
+          <IconButton
+            label={`Удалить в корзину: ${goal.title}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              remove(goal.id)
+            }}
+            className="-mr-1.5 size-7 text-muted hover:bg-priority-bg hover:text-priority-ink"
+          >
+            <Trash2 size={15} strokeWidth={1.75} />
+          </IconButton>
         </div>
 
         <div className="mt-2.5 flex items-center gap-3 pl-8">
@@ -150,7 +163,7 @@ export function GoalCard({ goal, category, onEdit }: GoalCardProps) {
               </form>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex items-center justify-end gap-1">
               <button
                 type="button"
                 onClick={onEdit}
@@ -159,6 +172,14 @@ export function GoalCard({ goal, category, onEdit }: GoalCardProps) {
                 <Pencil size={14} strokeWidth={1.75} />
                 Изменить
               </button>
+              <button
+                type="button"
+                onClick={() => remove(goal.id)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-small font-medium text-muted transition-colors hover:bg-priority-bg hover:text-priority-ink"
+              >
+                <Trash2 size={14} strokeWidth={1.75} />
+                В корзину
+              </button>
             </div>
           </div>
         </div>
@@ -166,4 +187,3 @@ export function GoalCard({ goal, category, onEdit }: GoalCardProps) {
     </article>
   )
 }
-
