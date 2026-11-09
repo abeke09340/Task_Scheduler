@@ -45,8 +45,8 @@ export function GoalsPage() {
 
   const startKey = periodStartKey(period)
   const visible = useMemo(
-    () => sortGoals(goals.filter((g) => g.period === period && g.periodStart === startKey)),
-    [goals, period, startKey],
+    () => sortGoals(goals.filter((g) => g.period === period && g.periodStart === startKey), categories),
+    [goals, period, startKey, categories],
   )
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories])
   const progress = averageProgress(visible)

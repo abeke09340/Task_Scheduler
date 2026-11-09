@@ -34,6 +34,10 @@
   --color-sand: #ECE5D5;
   --color-sand-ink: #6E6247;
 
+  /* Индикатор высокого приоритета */
+  --color-priority-bg: #FDE8E8;
+  --color-priority-ink: #D92D20;
+
   /* Типографика: максимум 3 размера */
   --text-title: 32px;
   --text-title--line-height: 40px;

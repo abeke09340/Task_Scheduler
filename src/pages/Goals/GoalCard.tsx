@@ -67,7 +67,10 @@ export function GoalCard({ goal, category, onEdit }: GoalCardProps) {
             {goal.title}
           </h3>
           {goal.priority === 'high' && !done && (
-            <Flag size={14} strokeWidth={2} className="shrink-0 text-rose-ink" aria-label="Высокий приоритет" />
+            <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-priority-bg px-2.5 text-small font-medium text-priority-ink">
+              <Flag size={12} strokeWidth={2.25} />
+              Приоритет
+            </span>
           )}
           {category && <Tag color={category.color}>{category.name}</Tag>}
         </div>

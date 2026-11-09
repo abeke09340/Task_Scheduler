@@ -1,4 +1,4 @@
-import type { Goal, Priority } from '../types/models'
+import type { Category, Goal, Priority } from '../types/models'
 
 /** Прогресс цели 0–100: выполнена → 100, иначе доля выполненных подцелей */
 export function goalProgress(goal: Goal): number {
@@ -19,17 +19,35 @@ export function averageProgress(goals: Goal[]): number {
 
 const PRIORITY_WEIGHT: Record<Priority, number> = { high: 0, medium: 1, low: 2 }
 
-/** Невыполненные сверху (по приоритету, затем по дедлайну), выполненные — в конце */
-export function sortGoals(goals: Goal[]): Goal[] {
+/**
+ * Сортировка целей:
+ * 1. Невыполненные сверху, выполненные — в самом низу.
+ * 2. Цели с высоким приоритетом («Приоритет») — на самом верху.
+ * 3. Группировка по категориям (по порядку категорий), чтобы цели одной категории стояли рядом.
+ * 4. Внутри одной категории — по приоритету, затем по дедлайну и дате создания.
+ */
+export function sortGoals(goals: Goal[], categories: Category[] = []): Goal[] {
+  const categoryOrder = new Map(categories.map((c, idx) => [c.id, c.order ?? idx]))
+
   return [...goals].sort((a, b) => {
     const doneDiff = Number(isGoalDone(a)) - Number(isGoalDone(b))
     if (doneDiff !== 0) return doneDiff
+
+    const aHigh = a.priority === 'high' ? 0 : 1
+    const bHigh = b.priority === 'high' ? 0 : 1
+    if (aHigh !== bHigh) return aHigh - bHigh
+
+    const aCat = categoryOrder.get(a.categoryId) ?? 999
+    const bCat = categoryOrder.get(b.categoryId) ?? 999
+    if (aCat !== bCat) return aCat - bCat
+    if (a.categoryId !== b.categoryId) return a.categoryId.localeCompare(b.categoryId)
+
     const prDiff = PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority]
     if (prDiff !== 0) return prDiff
+
     if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline)
     if (a.deadline) return -1
     if (b.deadline) return 1
     return a.createdAt.localeCompare(b.createdAt)
   })
 }
-
