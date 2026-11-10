@@ -15,13 +15,13 @@ const PREFIX = 'planner:v1:'
 
 function usernameToEmail(username: string): string {
   const clean = username.trim().toLowerCase()
-  return clean.includes('@') ? clean : `${clean}@planner.local`
+  return clean.includes('@') ? clean : `${clean}@planner.app`
 }
 
 function emailToUsername(email?: string, metaUsername?: string): string {
   if (metaUsername && metaUsername.trim()) return metaUsername.trim()
   if (!email) return 'User'
-  return email.replace(/@planner\.local$/i, '').split('@')[0]
+  return email.replace(/@(planner\.app|planner\.local)$/i, '').split('@')[0]
 }
 
 function readRaw<T>(key: string): T | null {

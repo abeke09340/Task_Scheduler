@@ -1,7 +1,17 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+function normalizeSupabaseUrl(rawUrl?: string): string | undefined {
+  if (!rawUrl) return undefined
+  let url = rawUrl.trim()
+  // Очищаем случайные суффиксы типа /rest/v1 или слэши на конце
+  url = url.replace(/\/rest\/v1\/?$/i, '')
+  url = url.replace(/\/+$/, '')
+  return url
+}
+
+const rawSupabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim()
+const supabaseUrl = normalizeSupabaseUrl(rawSupabaseUrl)
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
@@ -19,4 +29,3 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
       },
     })
   : null
-
