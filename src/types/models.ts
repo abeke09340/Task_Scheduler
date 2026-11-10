@@ -63,8 +63,8 @@ export interface Profile {
 export interface User {
   id: ID
   username: string
-  passwordHash: string
-  salt: string
+  passwordHash?: string
+  salt?: string
   createdAt: ISODateTime
 }
 

@@ -1,11 +1,23 @@
 import { create } from 'zustand'
 import { generateSalt, hashPassword, validatePassword } from '../lib/auth-crypto'
+import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import { nowISO } from '../lib/utils'
 import type { AuthSession, Category, Goal, ID, ScheduleItem, User } from '../types/models'
 
 const USERS_KEY = 'planner:v1:users'
 const SESSION_KEY = 'planner:v1:session'
 const PREFIX = 'planner:v1:'
+
+function usernameToEmail(username: string): string {
+  const clean = username.trim().toLowerCase()
+  return clean.includes('@') ? clean : `${clean}@planner.local`
+}
+
+function emailToUsername(email?: string, metaUsername?: string): string {
+  if (metaUsername && metaUsername.trim()) return metaUsername.trim()
+  if (!email) return 'User'
+  return email.replace(/@planner\.local$/i, '').split('@')[0]
+}
 
 function readRaw<T>(key: string): T | null {
   try {
@@ -62,7 +74,6 @@ function writeSession(session: AuthSession | null) {
   }
 }
 
-/** Миграция существующих локальных данных на аккаунт только что зарегистрированного пользователя */
 function migrateLocalDataToUser(userId: ID) {
   const goals = readRaw<Goal[]>('goals') || []
   let goalsChanged = false
@@ -100,10 +111,11 @@ interface AuthState {
   session: AuthSession | null
   isReady: boolean
   error: string | null
-  init: () => void
+  isCloud: boolean
+  init: () => Promise<void>
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
   register: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
-  logout: () => void
+  logout: () => Promise<void>
   syncFromStorage: () => void
   clearError: () => void
 }
@@ -113,8 +125,66 @@ export const useAuth = create<AuthState>((set, get) => ({
   session: null,
   isReady: false,
   error: null,
+  isCloud: isSupabaseConfigured,
 
-  init() {
+  async init() {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (session?.user) {
+          const username = emailToUsername(
+            session.user.email,
+            session.user.user_metadata?.username,
+          )
+          const user: User = {
+            id: session.user.id,
+            username,
+            createdAt: session.user.created_at,
+          }
+          const authSession: AuthSession = {
+            userId: session.user.id,
+            username,
+            token: session.access_token,
+          }
+          set({ user, session: authSession, isReady: true, error: null })
+        } else {
+          set({ user: null, session: null, isReady: true })
+        }
+
+        // Подписка на обновление токена и смену сессии в Supabase
+        supabase.auth.onAuthStateChange((_event, session) => {
+          if (session?.user) {
+            const username = emailToUsername(
+              session.user.email,
+              session.user.user_metadata?.username,
+            )
+            set({
+              user: {
+                id: session.user.id,
+                username,
+                createdAt: session.user.created_at,
+              },
+              session: {
+                userId: session.user.id,
+                username,
+                token: session.access_token,
+              },
+            })
+          } else {
+            set({ user: null, session: null })
+          }
+        })
+      } catch (err) {
+        console.error('Supabase init auth error:', err)
+        set({ user: null, session: null, isReady: true })
+      }
+      return
+    }
+
+    // Режим локального хранилища (fallback)
     const session = readSession()
     if (!session) {
       set({ user: null, session: null, isReady: true })
@@ -132,6 +202,8 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
 
   syncFromStorage() {
+    if (isSupabaseConfigured) return
+
     const session = readSession()
     const users = readUsers()
     const current = get().session
@@ -163,6 +235,42 @@ export const useAuth = create<AuthState>((set, get) => ({
       return { success: false, error: err }
     }
 
+    if (isSupabaseConfigured && supabase) {
+      const email = usernameToEmail(username)
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error || !data.user) {
+        const message =
+          error?.message === 'Invalid login credentials'
+            ? 'Неверное имя пользователя или пароль'
+            : error?.message || 'Ошибка входа'
+        set({ error: message })
+        return { success: false, error: message }
+      }
+
+      const cleanUsername = emailToUsername(
+        data.user.email,
+        data.user.user_metadata?.username,
+      )
+      const user: User = {
+        id: data.user.id,
+        username: cleanUsername,
+        createdAt: data.user.created_at,
+      }
+      const session: AuthSession = {
+        userId: data.user.id,
+        username: cleanUsername,
+        token: data.session?.access_token || crypto.randomUUID(),
+      }
+
+      set({ user, session, error: null })
+      return { success: true }
+    }
+
+    // Локальный режим
     const users = readUsers()
     const user = users.find((u) => u.username.toLowerCase() === username.toLowerCase())
     if (!user) {
@@ -171,7 +279,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       return { success: false, error: err }
     }
 
-    const hash = await hashPassword(password, user.salt)
+    const hash = await hashPassword(password, user.salt || '')
     if (hash !== user.passwordHash) {
       const err = 'Неверное имя пользователя или пароль'
       set({ error: err })
@@ -186,7 +294,6 @@ export const useAuth = create<AuthState>((set, get) => ({
 
     writeSession(session)
     set({ user, session, error: null })
-
     return { success: true }
   },
 
@@ -205,6 +312,52 @@ export const useAuth = create<AuthState>((set, get) => ({
       return { success: false, error: err }
     }
 
+    if (isSupabaseConfigured && supabase) {
+      const email = usernameToEmail(username)
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { username },
+        },
+      })
+
+      if (error || !data.user) {
+        let msg = error?.message || 'Ошибка регистрации'
+        if (msg.includes('already registered')) {
+          msg = 'Пользователь с таким именем уже существует'
+        }
+        set({ error: msg })
+        return { success: false, error: msg }
+      }
+
+      // Сохраняем публичный профиль в таблице profiles
+      try {
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          username,
+          display_name: username,
+        })
+      } catch (profileErr) {
+        console.warn('Profile upsert warning:', profileErr)
+      }
+
+      const user: User = {
+        id: data.user.id,
+        username,
+        createdAt: data.user.created_at,
+      }
+      const session: AuthSession = {
+        userId: data.user.id,
+        username,
+        token: data.session?.access_token || crypto.randomUUID(),
+      }
+
+      set({ user, session, error: null })
+      return { success: true }
+    }
+
+    // Локальный режим
     const users = readUsers()
     const exists = users.some((u) => u.username.toLowerCase() === username.toLowerCase())
     if (exists) {
@@ -225,8 +378,6 @@ export const useAuth = create<AuthState>((set, get) => ({
 
     users.push(user)
     writeUsers(users)
-
-    // Привязываем локальные цели и дела к новому пользователю
     migrateLocalDataToUser(user.id)
 
     const session: AuthSession = {
@@ -237,12 +388,19 @@ export const useAuth = create<AuthState>((set, get) => ({
 
     writeSession(session)
     set({ user, session, error: null })
-
     return { success: true }
   },
 
-  logout() {
-    writeSession(null)
+  async logout() {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.auth.signOut()
+      } catch (err) {
+        console.error('Supabase signOut error:', err)
+      }
+    } else {
+      writeSession(null)
+    }
     set({ user: null, session: null, error: null })
   },
 }))
@@ -250,4 +408,3 @@ export const useAuth = create<AuthState>((set, get) => ({
 export function getActiveUserId(): ID {
   return useAuth.getState().user?.id ?? 'local'
 }
-

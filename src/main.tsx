@@ -11,7 +11,7 @@ import { useProfile } from './stores/profile'
 import { useSchedule } from './stores/schedule'
 
 async function bootstrap() {
-  useAuth.getState().init()
+  await useAuth.getState().init()
   await ensureSeed()
   await Promise.all([
     useCategories.getState().load(),

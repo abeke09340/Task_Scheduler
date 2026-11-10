@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { repos } from '../storage'
+import { ensureSeed } from '../storage/seed'
 import { getActiveUserId } from './auth'
 import type { Category, ColorKey, ID } from '../types/models'
 import { newId, nowISO } from '../lib/utils'
@@ -18,7 +19,11 @@ export const useCategories = create<CategoriesState>((set, get) => ({
   categories: [],
 
   async load() {
-    const categories = await repos.categories.list()
+    let categories = await repos.categories.list()
+    if (categories.length === 0) {
+      await ensureSeed()
+      categories = await repos.categories.list()
+    }
     set({ categories: categories.sort(byOrder) })
   },
 
