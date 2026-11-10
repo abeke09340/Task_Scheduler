@@ -2,6 +2,11 @@ import { create } from 'zustand'
 import { generateSalt, hashPassword, validatePassword } from '../lib/auth-crypto'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import { nowISO } from '../lib/utils'
+import {
+  toSupabaseCategory,
+  toSupabaseGoal,
+  toSupabaseSchedule,
+} from '../storage/supabaseRepo'
 import type { AuthSession, Category, Goal, ID, ScheduleItem, User } from '../types/models'
 
 const USERS_KEY = 'planner:v1:users'
@@ -106,6 +111,38 @@ function migrateLocalDataToUser(userId: ID) {
   if (catChanged) writeRaw('categories', categories)
 }
 
+/** Автоматическая бесшовная миграция всех локальных целей из localStorage в облако Supabase */
+async function syncLocalDataToSupabase(userId: string) {
+  if (!supabase) return
+  try {
+    const goals = readRaw<Goal[]>('goals') || []
+    if (goals.length > 0) {
+      for (const g of goals) {
+        const payload = toSupabaseGoal({ ...g, userId }, userId)
+        await supabase.from('goals').upsert(payload)
+      }
+    }
+
+    const schedule = readRaw<ScheduleItem[]>('schedule') || []
+    if (schedule.length > 0) {
+      for (const s of schedule) {
+        const payload = toSupabaseSchedule({ ...s, userId }, userId)
+        await supabase.from('schedule').upsert(payload)
+      }
+    }
+
+    const categories = readRaw<Category[]>('categories') || []
+    if (categories.length > 0) {
+      for (const c of categories) {
+        const payload = toSupabaseCategory({ ...c, userId }, userId)
+        await supabase.from('categories').upsert(payload)
+      }
+    }
+  } catch (err) {
+    console.error('Failed to sync local data to Supabase:', err)
+  }
+}
+
 interface AuthState {
   user: User | null
   session: AuthSession | null
@@ -150,6 +187,7 @@ export const useAuth = create<AuthState>((set, get) => ({
             token: session.access_token,
           }
           set({ user, session: authSession, isReady: true, error: null })
+          await syncLocalDataToSupabase(session.user.id)
         } else {
           set({ user: null, session: null, isReady: true })
         }
@@ -267,6 +305,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       }
 
       set({ user, session, error: null })
+      await syncLocalDataToSupabase(user.id)
       return { success: true }
     }
 
@@ -354,6 +393,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       }
 
       set({ user, session, error: null })
+      await syncLocalDataToSupabase(user.id)
       return { success: true }
     }
 
