@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { CopyPlus, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { Button, IconButton } from '../../components/ui/Button'
 import { Checkbox } from '../../components/ui/Checkbox'
@@ -19,6 +19,8 @@ interface DailyGoalsViewProps {
   viewMode: GoalsViewMode
   onAddGoal: (categoryId?: string) => void
   onEditGoal: (goal: Goal) => void
+  onCarryOver?: () => void
+  carryOverCount?: number
 }
 
 export function DailyGoalsView({
@@ -28,6 +30,8 @@ export function DailyGoalsView({
   viewMode,
   onAddGoal,
   onEditGoal,
+  onCarryOver,
+  carryOverCount = 0,
 }: DailyGoalsViewProps) {
   const toggleDailyDay = useGoals((s) => s.toggleDailyDay)
   const remove = useGoals((s) => s.remove)
@@ -58,10 +62,18 @@ export function DailyGoalsView({
       <EmptyState
         title="Ежедневных целей пока нет. Добавьте рутинные дела (чтение, спорт, подъем) для трекинга по дням."
         action={
-          <Button variant="secondary" onClick={() => onAddGoal()}>
-            <Plus size={16} strokeWidth={2} />
-            Добавить ежедневную цель
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {onCarryOver && carryOverCount > 0 && (
+              <Button variant="primary" onClick={onCarryOver}>
+                <CopyPlus size={16} strokeWidth={1.75} />
+                Перенести с прошлой недели ({carryOverCount})
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => onAddGoal()}>
+              <Plus size={16} strokeWidth={2} />
+              Добавить ежедневную цель
+            </Button>
+          </div>
         }
       />
     )

@@ -1,6 +1,7 @@
 import {
   CalendarDays,
   Plus,
+  Split,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { PageHeader } from '../../components/layout/PageHeader'
@@ -19,12 +20,27 @@ function parseTimeToMinutes(t: string): number {
   return (h || 0) * 60 + (m || 0)
 }
 
+function formatDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h > 0 && m > 0) return `${h} ч ${m} мин`
+  if (h > 0) {
+    if (h === 1) return '1 час'
+    if (h >= 2 && h <= 4) return `${h} часа`
+    return `${h} часов`
+  }
+  return `${m} мин`
+}
+
 interface Slot {
   startMin: number
   endMin: number
   startTime: string
   endTime: string
   isCurrent: boolean
+  durationMinutes: number
+  isMerged: boolean
+  innerMergedTimes: string[]
 }
 
 type ModalState =
@@ -36,6 +52,8 @@ export function SchedulePage() {
   const items = useSchedule((s) => s.items)
   const settings = useSchedule((s) => s.settings)
   const removeItem = useSchedule((s) => s.removeItem)
+  const mergeSlots = useSchedule((s) => s.mergeSlots)
+  const splitSlot = useSchedule((s) => s.splitSlot)
 
   const [today] = useState(() => new Date())
   const todayStr = useMemo(() => toISODate(today), [today])
@@ -48,31 +66,54 @@ export function SchedulePage() {
 
   const isToday = selectedDate === todayStr
 
-  // Генерация слотов сетки на основе настроек пользователя
+  // Генерация слотов сетки на основе настроек пользователя (с учётом объединённых интервалов)
   const slots: Slot[] = useMemo(() => {
-    const res: Slot[] = []
     const startMin = settings.startHour * 60
     const endMin = settings.endHour * 60
     const step = settings.slotMinutes || 60
+    const mergedSet = new Set(settings.mergedTimes ?? [])
 
     const nowMinutes = today.getHours() * 60 + today.getMinutes()
 
-    for (let m = startMin; m < endMin; m += step) {
-      const nextM = Math.min(m + step, endMin)
-      const startTime = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
-      const endTime = `${String(Math.floor(nextM / 60)).padStart(2, '0')}:${String(nextM % 60).padStart(2, '0')}`
-      const isCurrent = isToday && nowMinutes >= m && nowMinutes < nextM
+    const activeBoundaries: number[] = [startMin]
+    for (let m = startMin + step; m < endMin; m += step) {
+      const timeStr = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+      if (!mergedSet.has(timeStr)) {
+        activeBoundaries.push(m)
+      }
+    }
+    activeBoundaries.push(endMin)
+
+    const res: Slot[] = []
+    for (let i = 0; i < activeBoundaries.length - 1; i++) {
+      const sMin = activeBoundaries[i]
+      const eMin = activeBoundaries[i + 1]
+      const startTime = `${String(Math.floor(sMin / 60)).padStart(2, '0')}:${String(sMin % 60).padStart(2, '0')}`
+      const endTime = `${String(Math.floor(eMin / 60)).padStart(2, '0')}:${String(eMin % 60).padStart(2, '0')}`
+      const isCurrent = isToday && nowMinutes >= sMin && nowMinutes < eMin
+      const durationMinutes = eMin - sMin
+      const isMerged = durationMinutes > step
+
+      const innerMergedTimes: string[] = []
+      for (let m = sMin + step; m < eMin; m += step) {
+        innerMergedTimes.push(
+          `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`,
+        )
+      }
 
       res.push({
-        startMin: m,
-        endMin: nextM,
+        startMin: sMin,
+        endMin: eMin,
         startTime,
         endTime,
         isCurrent,
+        durationMinutes,
+        isMerged,
+        innerMergedTimes,
       })
     }
     return res
-  }, [settings.startHour, settings.endHour, settings.slotMinutes, isToday, today])
+  }, [settings.startHour, settings.endHour, settings.slotMinutes, settings.mergedTimes, isToday, today])
 
   // Фильтрация дел для выбранного дня (свои дела дня + повторяющиеся каждый день)
   const dayItems = useMemo(() => {
@@ -101,6 +142,7 @@ export function SchedulePage() {
 
       const list = map.get(assignedSlotIndex) ?? []
       list.push(item)
+      list.sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime))
       map.set(assignedSlotIndex, list)
     }
 
@@ -228,79 +270,132 @@ export function SchedulePage() {
           {slots.map((slot, index) => {
             const slotItems = slotItemsMap.get(index) ?? []
             const hasItems = slotItems.length > 0
+            const nextSlot = slots[index + 1]
 
             return (
-              <div
-                key={slot.startTime}
-                className={cn(
-                  'group/slot flex items-stretch border-b border-line/80 transition-colors last:border-b-0',
-                  slot.isCurrent ? 'bg-accent-soft/20' : 'hover:bg-bg/40',
-                )}
-              >
-                {/* Левая колонка (рядом с сайдбаром): диапазон времени и серая разделительная линия */}
-                <div className="flex flex-col justify-start w-36 sm:w-44 shrink-0 py-3.5 px-3.5 border-r border-line">
-                  <div className="flex items-center gap-1.5 whitespace-nowrap">
-                    <span
-                      className={cn(
-                        'text-body font-bold tracking-tight tabular-nums',
-                        slot.isCurrent ? 'text-accent' : 'text-ink',
+              <div key={slot.startTime} className="flex flex-col">
+                <div
+                  className={cn(
+                    'group/slot flex items-stretch transition-colors',
+                    slot.isCurrent ? 'bg-accent-soft/20' : 'hover:bg-bg/40',
+                  )}
+                >
+                  {/* Левая колонка (рядом с сайдбаром): диапазон времени и серая разделительная линия */}
+                  <div className="flex flex-col justify-start w-36 sm:w-44 shrink-0 py-3.5 px-3.5 border-r border-line">
+                    <div className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
+                      <span
+                        className={cn(
+                          'text-body font-bold tracking-tight tabular-nums',
+                          slot.isCurrent ? 'text-accent' : 'text-ink',
+                        )}
+                      >
+                        {slot.startTime} – {slot.endTime}
+                      </span>
+                      {slot.isMerged && (
+                        <span className="inline-flex items-center rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                          {formatDuration(slot.durationMinutes)}
+                        </span>
                       )}
-                    >
-                      {slot.startTime} – {slot.endTime}
-                    </span>
+                    </div>
+
+                    {/* Индикатор «сейчас» */}
+                    {slot.isCurrent && (
+                      <span className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-white shadow-xs">
+                        <span className="size-1.5 animate-pulse rounded-full bg-white" />
+                        сейчас
+                      </span>
+                    )}
+
+                    {/* Кнопки действий: Добавить и Разделить */}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCreate(slot.startTime, slot.endTime)}
+                        title={`Запланировать на ${slot.startTime} – ${slot.endTime}`}
+                        className="inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-muted transition-colors hover:bg-pill hover:text-ink md:opacity-0 md:group-hover/slot:opacity-100"
+                      >
+                        <Plus size={13} strokeWidth={2} />
+                        <span>Добавить</span>
+                      </button>
+
+                      {slot.isMerged && (
+                        <button
+                          type="button"
+                          onClick={() => splitSlot(slot.innerMergedTimes)}
+                          title={`Разделить обратно на интервалы по ${settings.slotMinutes} мин`}
+                          className="inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted transition-colors hover:bg-rose/25 hover:text-rose-ink"
+                        >
+                          <Split size={12} strokeWidth={1.75} />
+                          <span>Разделить</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Индикатор «сейчас» */}
-                  {slot.isCurrent && (
-                    <span className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-white shadow-xs">
-                      <span className="size-1.5 animate-pulse rounded-full bg-white" />
-                      сейчас
-                    </span>
-                  )}
-
-                  {/* Кнопка добавления в этот слот */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenCreate(slot.startTime, slot.endTime)}
-                    title={`Запланировать на ${slot.startTime} – ${slot.endTime}`}
-                    className="mt-2 inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] font-medium text-muted transition-colors hover:bg-pill hover:text-ink md:opacity-0 md:group-hover/slot:opacity-100"
-                  >
-                    <Plus size={13} strokeWidth={2} />
-                    <span>Добавить</span>
-                  </button>
+                  {/* Правая область: список дел в этом диапазоне */}
+                  <div className="flex flex-1 flex-col gap-2 p-3">
+                    {hasItems ? (
+                      slotItems.map((item) => (
+                        <ScheduleItemCard
+                          key={item.id}
+                          item={item}
+                          onEdit={(it) => setModalState({ mode: 'edit', item: it })}
+                          onDelete={handleDeleteItem}
+                        />
+                      ))
+                    ) : (
+                      /* Если пока пусто: чистый спокойный интервал */
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCreate(slot.startTime, slot.endTime)}
+                        className={cn(
+                          'group/empty flex min-h-[38px] w-full items-center justify-between rounded-xl border border-dashed border-line/80 bg-surface/20 px-4 py-1.5 text-left transition-all',
+                          'hover:border-accent hover:bg-surface/80 hover:shadow-xs',
+                        )}
+                      >
+                        <span className="text-small text-muted/60 transition-colors group-hover/empty:text-muted">
+                          Свободно
+                        </span>
+                        <span className="flex items-center gap-1 text-small font-medium text-muted opacity-0 transition-all group-hover/empty:opacity-100 group-hover/empty:text-accent">
+                          <Plus size={13} strokeWidth={2} />
+                          <span>Запланировать</span>
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {/* Правая область: список дел в этом диапазоне */}
-                <div className="flex flex-1 flex-col gap-2 p-3">
-                  {hasItems ? (
-                    slotItems.map((item) => (
-                      <ScheduleItemCard
-                        key={item.id}
-                        item={item}
-                        onEdit={(it) => setModalState({ mode: 'edit', item: it })}
-                        onDelete={handleDeleteItem}
-                      />
-                    ))
-                  ) : (
-                    /* Если пока пусто: чистый спокойный интервал */
-                    <button
-                      type="button"
-                      onClick={() => handleOpenCreate(slot.startTime, slot.endTime)}
-                      className={cn(
-                        'group/empty flex min-h-[38px] w-full items-center justify-between rounded-xl border border-dashed border-line/80 bg-surface/20 px-4 py-1.5 text-left transition-all',
-                        'hover:border-accent hover:bg-surface/80 hover:shadow-xs',
-                      )}
-                    >
-                      <span className="text-small text-muted/60 transition-colors group-hover/empty:text-muted">
-                        Свободно
-                      </span>
-                      <span className="flex items-center gap-1 text-small font-medium text-muted opacity-0 transition-all group-hover/empty:opacity-100 group-hover/empty:text-accent">
-                        <Plus size={13} strokeWidth={2} />
-                        <span>Запланировать</span>
-                      </span>
-                    </button>
-                  )}
-                </div>
+                {/* Разделитель между строками с кнопкой "+" для объединения интервалов */}
+                {nextSlot && (
+                  <div className="group/divider relative z-10 flex h-0 w-full items-center">
+                    {/* Горизонтальная линия границы */}
+                    <div className="absolute inset-x-0 top-0 border-b border-line/80 transition-colors group-hover/divider:border-accent/40" />
+
+                    {/* Область кнопки "+" строго по центру под колонкой времени */}
+                    <div className="relative flex w-36 sm:w-44 shrink-0 items-center justify-center -translate-y-1/2">
+                      <button
+                        type="button"
+                        onClick={() => mergeSlots(slot.endTime)}
+                        title={`Объединить интервалы ${slot.startTime}–${slot.endTime} и ${nextSlot.startTime}–${nextSlot.endTime} в единый блок ${slot.startTime}–${nextSlot.endTime}`}
+                        className={cn(
+                          'group/btn flex items-center gap-1 rounded-full border border-line bg-surface py-0.5 shadow-xs transition-all duration-150',
+                          'px-2 hover:px-2.5',
+                          'hover:border-accent hover:bg-accent hover:text-white hover:scale-105 active:scale-95',
+                          'text-muted hover:shadow-sm',
+                        )}
+                      >
+                        <Plus
+                          size={11}
+                          strokeWidth={2.5}
+                          className="shrink-0 transition-transform group-hover/btn:rotate-90"
+                        />
+                        <span className="max-w-0 overflow-hidden whitespace-nowrap text-[11px] font-semibold transition-all duration-200 group-hover/btn:max-w-xs">
+                          Объединить ({formatDuration(slot.durationMinutes + nextSlot.durationMinutes)})
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}

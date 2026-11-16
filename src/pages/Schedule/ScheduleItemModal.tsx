@@ -32,8 +32,8 @@ export function ScheduleItemModal({
   const [title, setTitle] = useState(itemToEdit?.title ?? '')
   const [timeNote, setTimeNote] = useState(itemToEdit?.timeNote ?? '')
   const [date, setDate] = useState<ISODate>(itemToEdit?.date ?? initialDate)
-  const startTime = itemToEdit?.startTime ?? initialStartTime
-  const endTime = itemToEdit?.endTime ?? initialEndTime
+  const [startTime, setStartTime] = useState(itemToEdit?.startTime ?? initialStartTime)
+  const [endTime, setEndTime] = useState(itemToEdit?.endTime ?? initialEndTime)
   const [color, setColor] = useState<ColorKey>(itemToEdit?.color ?? 'blue')
   const [repeatDaily, setRepeatDaily] = useState(itemToEdit?.repeatDaily ?? false)
 
@@ -122,12 +122,24 @@ export function ScheduleItemModal({
           />
         </Field>
 
-        {/* Индикатор выбранного диапазона (автоматически из нажатого слота) */}
+        {/* Диапазон времени */}
         <div className="flex items-center justify-between rounded-lg border border-line bg-bg/50 px-3 py-2 text-small">
           <span className="text-muted">Интервал времени:</span>
-          <span className="font-semibold text-ink">
-            {startTime} – {endTime}
-          </span>
+          <div className="flex items-center gap-1.5 font-semibold text-ink">
+            <input
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="h-7 rounded border border-line bg-surface px-1.5 text-small font-semibold text-ink focus:border-accent focus:outline-none"
+            />
+            <span className="text-muted">–</span>
+            <input
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              className="h-7 rounded border border-line bg-surface px-1.5 text-small font-semibold text-ink focus:border-accent focus:outline-none"
+            />
+          </div>
         </div>
 
         {/* Дата и повтор */}

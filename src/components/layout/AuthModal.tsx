@@ -242,6 +242,16 @@ export function AuthModal({ onClose, dismissible = false }: AuthModalProps) {
                 ? 'Войти в аккаунт'
                 : 'Зарегистрироваться'}
           </Button>
+
+          {dismissible && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-2 text-center text-small text-muted transition-colors hover:text-ink hover:underline"
+            >
+              Продолжить локально (без входа)
+            </button>
+          )}
         </form>
       </div>
     </div>

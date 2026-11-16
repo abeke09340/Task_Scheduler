@@ -102,5 +102,7 @@ export interface ScheduleSettings {
   endHour: number
   /** Длительность одного слота в минутах (по умолчанию 60, можно 30, 15, 45 и т.д.) */
   slotMinutes: number
+  /** Список объединённых границ времени в формате "HH:MM", убранных между соседними слотами */
+  mergedTimes?: string[]
 }
 

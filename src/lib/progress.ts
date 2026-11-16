@@ -1,5 +1,11 @@
 import type { Category, Goal, Priority } from '../types/models'
 
+/** Ключ идентификации цели при переносе между неделями (отдельно для ежедневных и общих) */
+export function goalDuplicateKey(goal: Pick<Goal, 'goalType' | 'title'>): string {
+  const kind = goal.goalType === 'daily' ? 'daily' : 'general'
+  return `${kind}::${goal.title.trim().toLowerCase()}`
+}
+
 /** Прогресс цели 0–100: для ежедневной цели — доля отмеченных дней, иначе — выполненные подцели */
 export function goalProgress(goal: Goal, periodDates?: string[]): number {
   if (goal.goalType === 'daily' && periodDates && periodDates.length > 0) {
