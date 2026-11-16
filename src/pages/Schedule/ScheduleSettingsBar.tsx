@@ -18,14 +18,20 @@ const SPAN_OPTIONS = [
 export function ScheduleSettingsBar() {
   const settings = useSchedule((s) => s.settings)
   const updateSettings = useSchedule((s) => s.updateSettings)
+  const resetMergedSlots = useSchedule((s) => s.resetMergedSlots)
 
   const [expanded, setExpanded] = useState(false)
 
+  const mergedCount = settings.mergedTimes?.length ?? 0
+
   const isDefault =
-    settings.startHour === 7 && settings.endHour === 22 && settings.slotMinutes === 60
+    settings.startHour === 7 &&
+    settings.endHour === 22 &&
+    settings.slotMinutes === 60 &&
+    mergedCount === 0
 
   const handleReset = () => {
-    updateSettings({ startHour: 7, endHour: 22, slotMinutes: 60 })
+    updateSettings({ startHour: 7, endHour: 22, slotMinutes: 60, mergedTimes: [] })
   }
 
   const formatHour = (h: number) => `${String(h).padStart(2, '0')}:00`
@@ -47,6 +53,22 @@ export function ScheduleSettingsBar() {
             <span className="font-medium text-ink">
               шаг {settings.slotMinutes >= 60 ? `${settings.slotMinutes / 60} ч` : `${settings.slotMinutes} мин`}
             </span>
+            {mergedCount > 0 && (
+              <>
+                <span className="text-muted">·</span>
+                <span className="inline-flex items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-[11px] font-semibold text-accent">
+                  Объединено: {mergedCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={resetMergedSlots}
+                  className="text-[11px] text-muted transition-colors hover:text-rose-ink underline decoration-dotted"
+                  title="Сбросить все объединения интервалов"
+                >
+                  Сбросить
+                </button>
+              </>
+            )}
           </div>
         </div>
 

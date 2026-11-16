@@ -189,6 +189,16 @@ export const useAuth = create<AuthState>((set, get) => ({
           set({ user, session: authSession, isReady: true, error: null })
           await syncLocalDataToSupabase(session.user.id)
         } else {
+          // Если нет облачной сессии Supabase, проверяем локальную сохранённую сессию
+          const localSession = readSession()
+          if (localSession) {
+            const users = readUsers()
+            const found = users.find((u) => u.id === localSession.userId)
+            if (found) {
+              set({ user: found, session: localSession, isReady: true })
+              return
+            }
+          }
           set({ user: null, session: null, isReady: true })
         }
 
@@ -281,6 +291,23 @@ export const useAuth = create<AuthState>((set, get) => ({
       })
 
       if (error || !data.user) {
+        // Fallback: пробуем локальный вход, если пользователь был зарегистрирован локально
+        const users = readUsers()
+        const localUser = users.find((u) => u.username.toLowerCase() === username.toLowerCase())
+        if (localUser) {
+          const hash = await hashPassword(password, localUser.salt || '')
+          if (hash === localUser.passwordHash) {
+            const session: AuthSession = {
+              userId: localUser.id,
+              username: localUser.username,
+              token: crypto.randomUUID(),
+            }
+            writeSession(session)
+            set({ user: localUser, session, error: null })
+            return { success: true }
+          }
+        }
+
         const message =
           error?.message === 'Invalid login credentials'
             ? 'Неверное имя пользователя или пароль'

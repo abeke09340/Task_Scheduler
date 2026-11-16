@@ -1,4 +1,4 @@
-import { Columns2, History, Plus, Rows3 } from 'lucide-react'
+import { Columns2, CopyPlus, History, Plus, Rows3 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { PageHeader } from '../../components/layout/PageHeader'
@@ -7,12 +7,13 @@ import { Card, EmptyState } from '../../components/ui/Card'
 import { ProgressBar } from '../../components/ui/ProgressBar'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { PERIOD_OPTIONS } from '../../lib/constants'
-import { getMonthDays, getWeekDays, periodLabel, periodStartKey } from '../../lib/dates'
-import { averageProgress, isGoalDone, sortGoals } from '../../lib/progress'
+import { getMonthDays, getWeekDays, periodLabel, periodStartKey, previousWeekStartKey } from '../../lib/dates'
+import { averageProgress, goalDuplicateKey, isGoalDone, sortGoals } from '../../lib/progress'
 import { cn } from '../../lib/utils'
 import { useCategories } from '../../stores/categories'
 import { useGoals } from '../../stores/goals'
 import type { Goal, GoalType, Period } from '../../types/models'
+import { CarryOverGoalsModal } from './CarryOverGoalsModal'
 import { DailyGoalsView, type GoalsViewMode } from './DailyGoalsView'
 import { GoalCard } from './GoalCard'
 import { GoalForm } from './GoalForm'
@@ -63,6 +64,7 @@ export function GoalsPage() {
   const categories = useCategories((s) => s.categories)
   const [form, setForm] = useState<FormState>({ mode: 'closed' })
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [carryOverOpen, setCarryOverOpen] = useState(false)
   // Раздельный режим отображения для ежедневных и общих целей
   const [dailyViewMode, setDailyViewMode] = useState<GoalsViewMode>(() => {
     try {
@@ -140,6 +142,56 @@ export function GoalsPage() {
   const deletedCount = useMemo(() => goals.filter((g) => Boolean(g.deletedAt)).length, [goals])
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories])
 
+  // Цели с прошлой недели для переноса (если прошлая неделя пуста — берём ближайшую предыдущую с целями)
+  const {
+    sourceWeekStart,
+    sourceWeekGoals,
+    transferableCount,
+    transferableDailyCount,
+    transferableGeneralCount,
+  } = useMemo(() => {
+    if (period !== 'week') {
+      return {
+        sourceWeekStart: null,
+        sourceWeekGoals: [] as Goal[],
+        transferableCount: 0,
+        transferableDailyCount: 0,
+        transferableGeneralCount: 0,
+      }
+    }
+
+    const pastWeekly = goals.filter(
+      (g) => !g.deletedAt && g.period === 'week' && g.periodStart < startKey,
+    )
+    if (pastWeekly.length === 0) {
+      return {
+        sourceWeekStart: null,
+        sourceWeekGoals: [] as Goal[],
+        transferableCount: 0,
+        transferableDailyCount: 0,
+        transferableGeneralCount: 0,
+      }
+    }
+
+    const prevKey = previousWeekStartKey()
+    const hasPrev = pastWeekly.some((g) => g.periodStart === prevKey)
+    const targetSourceKey = hasPrev
+      ? prevKey
+      : pastWeekly.reduce((max, g) => (g.periodStart > max ? g.periodStart : max), '')
+
+    const list = pastWeekly.filter((g) => g.periodStart === targetSourceKey)
+    const currentKeys = new Set(periodGoals.map(goalDuplicateKey))
+    const transferable = list.filter((g) => !currentKeys.has(goalDuplicateKey(g)))
+
+    return {
+      sourceWeekStart: targetSourceKey,
+      sourceWeekGoals: list,
+      transferableCount: transferable.length,
+      transferableDailyCount: transferable.filter((g) => g.goalType === 'daily').length,
+      transferableGeneralCount: transferable.filter((g) => g.goalType !== 'daily').length,
+    }
+  }, [goals, period, startKey, periodGoals])
+
   // Группировка общих целей по категориям (для режима «По 2 категории в ряд»)
   const generalByCategory = useMemo(() => {
     const map = new Map<string, Goal[]>()
@@ -197,7 +249,7 @@ export function GoalsPage() {
   // Горячая клавиша N — новая цель
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (form.mode !== 'closed' || historyOpen || e.metaKey || e.ctrlKey || e.altKey) return
+      if (form.mode !== 'closed' || historyOpen || carryOverOpen || e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement
       if (target.closest('input, textarea, [contenteditable="true"]')) return
       if (e.code === 'KeyN') {
@@ -207,7 +259,7 @@ export function GoalsPage() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [form.mode, historyOpen, hasSubTabs, subTab])
+  }, [form.mode, historyOpen, carryOverOpen, hasSubTabs, subTab])
 
   const periodTabs = (
     <SegmentedControl label="Период целей" options={PERIOD_OPTIONS} value={period} onChange={setPeriod} />
@@ -284,7 +336,7 @@ export function GoalsPage() {
 
       {/* Подвкладки (Ежедневные цели / Общие цели) для недели и месяца */}
       {hasSubTabs && (
-        <div className="mt-3 flex items-center justify-between gap-3 border-b border-line pb-2.5">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5 border-b border-line pb-2.5">
           <SegmentedControl
             label="Подраздел целей"
             options={SUB_TAB_OPTIONS}
@@ -293,11 +345,30 @@ export function GoalsPage() {
             className="bg-bg/80 p-0.5"
           />
 
-          <span className="text-small text-muted">
-            {subTab === 'daily'
-              ? `${dailyGoals.length} ${dailyGoals.length === 1 ? 'привычка' : dailyGoals.length < 5 ? 'привычки' : 'привычек'}`
-              : `${generalGoals.length} ${generalGoals.length === 1 ? 'цель' : generalGoals.length < 5 ? 'цели' : 'целей'}`}
-          </span>
+          <div className="flex items-center gap-3">
+            {period === 'week' && sourceWeekGoals.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setCarryOverOpen(true)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-small font-medium text-ink transition-colors hover:border-accent hover:text-accent"
+                title="Перенести или убрать цели из прошлой недели"
+              >
+                <CopyPlus size={14} strokeWidth={1.75} />
+                <span>С прошлой недели</span>
+                {transferableCount > 0 && (
+                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-soft px-1 text-[11px] font-semibold text-accent tabular-nums">
+                    {transferableCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            <span className="text-small text-muted">
+              {subTab === 'daily'
+                ? `${dailyGoals.length} ${dailyGoals.length === 1 ? 'привычка' : dailyGoals.length < 5 ? 'привычки' : 'привычек'}`
+                : `${generalGoals.length} ${generalGoals.length === 1 ? 'цель' : generalGoals.length < 5 ? 'цели' : 'целей'}`}
+            </span>
+          </div>
         </div>
       )}
 
@@ -325,18 +396,28 @@ export function GoalsPage() {
             viewMode={viewMode}
             onAddGoal={(categoryId) => setForm({ mode: 'create', initialType: 'daily', initialCategoryId: categoryId })}
             onEditGoal={(goal) => setForm({ mode: 'edit', goal })}
+            onCarryOver={period === 'week' ? () => setCarryOverOpen(true) : undefined}
+            carryOverCount={transferableDailyCount}
           />
         ) : generalGoals.length === 0 ? (
           <EmptyState
             title={EMPTY_TEXT[period]}
             action={
-              <Button
-                variant="secondary"
-                onClick={() => setForm({ mode: 'create', initialType: 'general' })}
-              >
-                <Plus size={16} strokeWidth={2} />
-                Новая цель
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {period === 'week' && transferableGeneralCount > 0 && (
+                  <Button variant="primary" onClick={() => setCarryOverOpen(true)}>
+                    <CopyPlus size={16} strokeWidth={1.75} />
+                    Перенести с прошлой недели ({transferableGeneralCount})
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  onClick={() => setForm({ mode: 'create', initialType: 'general' })}
+                >
+                  <Plus size={16} strokeWidth={2} />
+                  Новая цель
+                </Button>
+              </div>
             }
           />
         ) : viewMode === 'grid' ? (
@@ -412,6 +493,18 @@ export function GoalsPage() {
       )}
 
       {historyOpen && <GoalsHistoryModal onClose={() => setHistoryOpen(false)} />}
+
+      {carryOverOpen && sourceWeekStart && (
+        <CarryOverGoalsModal
+          sourceWeekStart={sourceWeekStart}
+          targetWeekStart={startKey}
+          sourceGoals={sourceWeekGoals}
+          currentWeekGoals={periodGoals}
+          categories={categories}
+          initialFocusType={subTab}
+          onClose={() => setCarryOverOpen(false)}
+        />
+      )}
     </div>
   )
 }

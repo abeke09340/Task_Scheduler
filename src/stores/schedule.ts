@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: ScheduleSettings = {
   startHour: 7,
   endHour: 22,
   slotMinutes: 60,
+  mergedTimes: [],
 }
 
 export interface CreateScheduleInput {
@@ -28,6 +29,9 @@ interface ScheduleState {
   settings: ScheduleSettings
   load: () => Promise<void>
   updateSettings: (patch: Partial<ScheduleSettings>) => void
+  mergeSlots: (boundaryTime: string) => void
+  splitSlot: (innerTimes: string[]) => void
+  resetMergedSlots: () => void
   createItem: (input: CreateScheduleInput) => ScheduleItem
   updateItem: (
     id: ID,
@@ -61,18 +65,63 @@ export const useSchedule = create<ScheduleState>((set, get) => {
 
       set({
         items,
-        settings: savedSettings ? { ...DEFAULT_SETTINGS, ...savedSettings } : DEFAULT_SETTINGS,
+        settings: savedSettings
+          ? {
+              ...DEFAULT_SETTINGS,
+              ...savedSettings,
+              mergedTimes: savedSettings.mergedTimes ?? [],
+            }
+          : DEFAULT_SETTINGS,
       })
     },
 
     updateSettings(patch) {
+      const current = get().settings
       const next: ScheduleSettings = {
-        ...get().settings,
+        ...current,
         ...patch,
       }
       next.startHour = Math.max(0, Math.min(22, next.startHour))
       next.endHour = Math.max(next.startHour + 1, Math.min(24, next.endHour))
       next.slotMinutes = Math.max(10, Math.min(240, next.slotMinutes))
+      // Если шаг сетки изменился — сбрасываем объединённые интервалы
+      if (patch.slotMinutes !== undefined && patch.slotMinutes !== current.slotMinutes) {
+        next.mergedTimes = []
+      }
+      set({ settings: next })
+      void kv.set(SETTINGS_KEY, next)
+    },
+
+    mergeSlots(boundaryTime) {
+      const settings = get().settings
+      const setTimes = new Set(settings.mergedTimes ?? [])
+      setTimes.add(boundaryTime)
+      const next: ScheduleSettings = {
+        ...settings,
+        mergedTimes: Array.from(setTimes).sort(),
+      }
+      set({ settings: next })
+      void kv.set(SETTINGS_KEY, next)
+    },
+
+    splitSlot(innerTimes) {
+      const settings = get().settings
+      const removeSet = new Set(innerTimes)
+      const nextList = (settings.mergedTimes ?? []).filter((t) => !removeSet.has(t))
+      const next: ScheduleSettings = {
+        ...settings,
+        mergedTimes: nextList,
+      }
+      set({ settings: next })
+      void kv.set(SETTINGS_KEY, next)
+    },
+
+    resetMergedSlots() {
+      const settings = get().settings
+      const next: ScheduleSettings = {
+        ...settings,
+        mergedTimes: [],
+      }
       set({ settings: next })
       void kv.set(SETTINGS_KEY, next)
     },

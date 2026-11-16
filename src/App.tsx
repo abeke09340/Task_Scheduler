@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router'
 import { AppLayout } from './components/layout/AppLayout'
 import { AuthModal } from './components/layout/AuthModal'
@@ -16,6 +16,7 @@ import { useSchedule } from './stores/schedule'
 export default function App() {
   const user = useAuth((s) => s.user)
   const isReady = useAuth((s) => s.isReady)
+  const [dismissAuth, setDismissAuth] = useState(false)
 
   // Многовкладочная синхронизация в реальном времени при любых изменениях
   useEffect(() => {
@@ -49,8 +50,10 @@ export default function App() {
         </Route>
       </Routes>
 
-      {/* Если пользователь не авторизован — показываем окно входа/регистрации */}
-      {isReady && !user && <AuthModal />}
+      {/* Если пользователь не авторизован — показываем окно входа/регистрации (можно закрыть и продолжить локально) */}
+      {isReady && !user && !dismissAuth && (
+        <AuthModal dismissible onClose={() => setDismissAuth(true)} />
+      )}
       <SiuuuCelebration />
     </>
   )

@@ -7,6 +7,7 @@ import {
   startOfMonth,
   startOfWeek,
   startOfYear,
+  subWeeks,
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { ISODate, Period } from '../types/models'
@@ -29,6 +30,11 @@ export function periodStartKey(period: Period, date: Date = new Date()): ISODate
     case 'year':
       return toISODate(startOfYear(date))
   }
+}
+
+/** Ключ предыдущей недели (понедельник прошлой недели) */
+export function previousWeekStartKey(date: Date = new Date()): ISODate {
+  return periodStartKey('week', subWeeks(date, 1))
 }
 
 /** Подпись текущего периода: «Среда, 4 ноября», «2–8 ноября», «Ноябрь 2026», «2026» */

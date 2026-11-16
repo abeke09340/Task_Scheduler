@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { repos } from '../storage'
 import { getActiveUserId } from './auth'
 import type { Goal, GoalType, ID, ISODate, Period, Priority, SubGoal } from '../types/models'
+import { isGoalDone } from '../lib/progress'
 import { newId, nowISO } from '../lib/utils'
 import { useCelebration } from './celebration'
 
@@ -22,9 +23,18 @@ interface GoalsState {
   goals: Goal[]
   load: () => Promise<void>
   create: (input: GoalInput) => Goal
+  /** Перенести выбранные цели в новую неделю (ежедневные → ежедневные, общие → общие) */
+  carryOverToWeek: (
+    sourceGoals: Goal[],
+    targetPeriodStart: ISODate,
+    validCategoryIds?: Set<ID>,
+    fallbackCategoryId?: ID,
+  ) => Goal[]
   update: (id: ID, patch: Partial<GoalInput>) => void
   /** Переместить цель в корзину (мягкое удаление) */
   remove: (id: ID) => void
+  /** Убрать несколько целей в корзину за один шаг */
+  removeMany: (ids: ID[]) => void
   /** Восстановить цель из корзины */
   restore: (id: ID) => void
   /** Удалить цель навсегда */
@@ -84,6 +94,67 @@ export const useGoals = create<GoalsState>((set, get) => {
       return goal
     },
 
+    carryOverToWeek(sourceGoals, targetPeriodStart, validCategoryIds, fallbackCategoryId) {
+      if (sourceGoals.length === 0) return []
+      const now = nowISO()
+      const userId = getActiveUserId()
+
+      const created: Goal[] = sourceGoals.map((src) => {
+        const isDaily = src.goalType === 'daily'
+        const categoryId =
+          validCategoryIds && !validCategoryIds.has(src.categoryId) && fallbackCategoryId
+            ? fallbackCategoryId
+            : src.categoryId
+
+        if (isDaily) {
+          return {
+            id: newId(),
+            userId,
+            title: src.title.trim(),
+            description: src.description?.trim() || undefined,
+            categoryId,
+            period: 'week',
+            periodStart: targetPeriodStart,
+            priority: src.priority,
+            goalType: 'daily',
+            subgoals: [],
+            dailyHistory: {},
+            createdAt: now,
+            updatedAt: now,
+          }
+        }
+
+        const wasDone = isGoalDone(src)
+        const subgoals = src.subgoals.map((s) => ({
+          id: newId(),
+          title: s.title,
+          done: wasDone ? false : s.done,
+        }))
+
+        return syncCompletion({
+          id: newId(),
+          userId,
+          title: src.title.trim(),
+          description: src.description?.trim() || undefined,
+          categoryId,
+          period: 'week',
+          periodStart: targetPeriodStart,
+          priority: src.priority,
+          goalType: 'general',
+          deadline: src.deadline && src.deadline >= targetPeriodStart ? src.deadline : undefined,
+          subgoals,
+          createdAt: now,
+          updatedAt: now,
+        })
+      })
+
+      set({ goals: [...get().goals, ...created] })
+      for (const goal of created) {
+        void repos.goals.upsert(goal)
+      }
+      return created
+    },
+
     update(id, patch) {
       mutate(id, (g) => {
         const next = { ...g, ...patch }
@@ -95,6 +166,24 @@ export const useGoals = create<GoalsState>((set, get) => {
 
     remove(id) {
       mutate(id, (g) => ({ ...g, deletedAt: nowISO() }))
+    },
+
+    removeMany(ids) {
+      if (ids.length === 0) return
+      const idSet = new Set(ids)
+      const now = nowISO()
+      const changed: Goal[] = []
+      const goals = get().goals.map((g) => {
+        if (!idSet.has(g.id) || g.deletedAt) return g
+        const updated = { ...g, deletedAt: now, updatedAt: now }
+        changed.push(updated)
+        return updated
+      })
+      if (changed.length === 0) return
+      set({ goals })
+      for (const goal of changed) {
+        void repos.goals.upsert(goal)
+      }
     },
 
     restore(id) {
