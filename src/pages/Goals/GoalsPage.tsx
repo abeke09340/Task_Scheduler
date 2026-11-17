@@ -1,3 +1,5 @@
+import { format, parseISO } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import { Columns2, CopyPlus, History, Plus, Rows3 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
@@ -7,14 +9,22 @@ import { Card, EmptyState } from '../../components/ui/Card'
 import { ProgressBar } from '../../components/ui/ProgressBar'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { PERIOD_OPTIONS } from '../../lib/constants'
-import { getMonthDays, getWeekDays, periodLabel, periodStartKey, previousWeekStartKey } from '../../lib/dates'
+import {
+  getMonthDays,
+  getWeekDays,
+  periodLabel,
+  periodStartKey,
+  previousWeekStartKey,
+  toISODate,
+} from '../../lib/dates'
 import { averageProgress, goalDuplicateKey, isGoalDone, sortGoals } from '../../lib/progress'
 import { cn } from '../../lib/utils'
 import { useCategories } from '../../stores/categories'
 import { useGoals } from '../../stores/goals'
-import type { Goal, GoalType, Period } from '../../types/models'
+import type { Goal, GoalType, ISODate, Period } from '../../types/models'
 import { CarryOverGoalsModal } from './CarryOverGoalsModal'
 import { DailyGoalsView, type GoalsViewMode } from './DailyGoalsView'
+import { DayDatePicker } from './DayDatePicker'
 import { GoalCard } from './GoalCard'
 import { GoalForm } from './GoalForm'
 import { GoalsHistoryModal } from './GoalsHistoryModal'
@@ -65,6 +75,8 @@ export function GoalsPage() {
   const [form, setForm] = useState<FormState>({ mode: 'closed' })
   const [historyOpen, setHistoryOpen] = useState(false)
   const [carryOverOpen, setCarryOverOpen] = useState(false)
+  const [todayStr] = useState(() => toISODate(new Date()))
+  const [selectedDayDate, setSelectedDayDate] = useState<ISODate>(todayStr)
   // Раздельный режим отображения для ежедневных и общих целей
   const [dailyViewMode, setDailyViewMode] = useState<GoalsViewMode>(() => {
     try {
@@ -109,7 +121,18 @@ export function GoalsPage() {
     }
   }
 
-  const startKey = periodStartKey(period)
+  const startKey = period === 'day' ? selectedDayDate : periodStartKey(period)
+
+  // Даты с дневными целями (для точек-индикаторов в календаре)
+  const dayGoalDates = useMemo(() => {
+    const set = new Set<ISODate>()
+    for (const g of goals) {
+      if (!g.deletedAt && g.period === 'day') {
+        set.add(g.periodStart)
+      }
+    }
+    return set
+  }, [goals])
 
   // Список дней для подсчета прогресса ежедневных целей
   const currentPeriodDays = useMemo(() => {
@@ -207,12 +230,13 @@ export function GoalsPage() {
 
   // Расчёт прогресса в зависимости от выбранной вкладки
   const { progress, progressSubtitle } = useMemo(() => {
+    const activeDate = period === 'day' ? parseISO(selectedDayDate) : undefined
     if (!hasSubTabs || subTab === 'general') {
       const prog = averageProgress(generalGoals)
       const done = generalGoals.filter((g) => isGoalDone(g)).length
       return {
         progress: prog,
-        progressSubtitle: `${periodLabel(period)}${generalGoals.length > 0 ? ` · выполнено ${done} из ${generalGoals.length}` : ''}`,
+        progressSubtitle: `${periodLabel(period, activeDate)}${generalGoals.length > 0 ? ` · выполнено ${done} из ${generalGoals.length}` : ''}`,
       }
     } else {
       // Для ежедневных целей: сколько тиков проставлено из всех возможных
@@ -229,10 +253,10 @@ export function GoalsPage() {
       const prog = totalPossible > 0 ? Math.round((checkedCount / totalPossible) * 100) : 0
       return {
         progress: prog,
-        progressSubtitle: `${periodLabel(period)}${dailyGoals.length > 0 ? ` · отмечено ${checkedCount} из ${totalPossible} дней` : ''}`,
+        progressSubtitle: `${periodLabel(period, activeDate)}${dailyGoals.length > 0 ? ` · отмечено ${checkedCount} из ${totalPossible} дней` : ''}`,
       }
     }
-  }, [hasSubTabs, subTab, generalGoals, dailyGoals, currentPeriodDates, period])
+  }, [hasSubTabs, subTab, generalGoals, dailyGoals, currentPeriodDates, period, selectedDayDate])
 
   const setPeriod = (p: Period) => {
     const nextParams: Record<string, string> = { period: p }
@@ -372,6 +396,15 @@ export function GoalsPage() {
         </div>
       )}
 
+      {/* Date picker для вкладки «День» (сворачиваемый / раскрываемый календарь) */}
+      {period === 'day' && (
+        <DayDatePicker
+          value={selectedDayDate}
+          onChange={setSelectedDayDate}
+          goalDates={dayGoalDates}
+        />
+      )}
+
       {/* Карточка суммарного прогресса */}
       <Card className="mt-3.5 px-5 py-4">
         <div className="flex items-end justify-between gap-4">
@@ -401,7 +434,11 @@ export function GoalsPage() {
           />
         ) : generalGoals.length === 0 ? (
           <EmptyState
-            title={EMPTY_TEXT[period]}
+            title={
+              period === 'day' && selectedDayDate !== todayStr
+                ? `На ${format(parseISO(selectedDayDate), 'd MMMM', { locale: ru })} целей пока нет`
+                : EMPTY_TEXT[period]
+            }
             action={
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {period === 'week' && transferableGeneralCount > 0 && (
@@ -486,6 +523,7 @@ export function GoalsPage() {
         <GoalForm
           goal={form.mode === 'edit' ? form.goal : undefined}
           defaultPeriod={period}
+          defaultDate={period === 'day' ? selectedDayDate : undefined}
           initialGoalType={form.mode === 'create' ? form.initialType : undefined}
           initialCategoryId={form.mode === 'create' ? form.initialCategoryId : undefined}
           onClose={() => setForm({ mode: 'closed' })}

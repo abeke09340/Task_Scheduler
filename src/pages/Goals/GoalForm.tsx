@@ -11,11 +11,12 @@ import { periodStartKey } from '../../lib/dates'
 import { cn, newId } from '../../lib/utils'
 import { useCategories } from '../../stores/categories'
 import { useGoals } from '../../stores/goals'
-import type { ColorKey, Goal, GoalType, Period, Priority, SubGoal } from '../../types/models'
+import type { ColorKey, Goal, GoalType, ISODate, Period, Priority, SubGoal } from '../../types/models'
 
 interface GoalFormProps {
   goal?: Goal
   defaultPeriod: Period
+  defaultDate?: ISODate
   initialGoalType?: GoalType
   initialCategoryId?: string
   onClose: () => void
@@ -24,6 +25,7 @@ interface GoalFormProps {
 export function GoalForm({
   goal,
   defaultPeriod,
+  defaultDate,
   initialGoalType = 'general',
   initialCategoryId,
   onClose,
@@ -89,7 +91,8 @@ export function GoalForm({
         periodStart: period === goal.period ? goal.periodStart : periodStartKey(period, parseISO(goal.periodStart)),
       })
     } else {
-      createGoal({ ...data, periodStart: periodStartKey(period) })
+      const baseDate = defaultDate ? parseISO(defaultDate) : new Date()
+      createGoal({ ...data, periodStart: periodStartKey(period, baseDate) })
     }
     onClose()
   }
